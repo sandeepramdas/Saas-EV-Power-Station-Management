@@ -1,0 +1,425 @@
+// Database Schema for EV Power Station Management Platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE ENTITIES
+// ============================================================================
+
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  type        TenantType
+  domain      String?  @unique
+  settings    Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  users       User[]
+  stations    Station[]
+  apiKeys     ApiKey[]
+  subscriptions Subscription[]
+
+  @@map("tenants")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String?
+  firstName   String
+  lastName    String
+  phone       String?
+  role        UserRole
+  isActive    Boolean  @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  sessions    UserSession[]
+  vehicles    Vehicle[]
+  bookings    Booking[]
+  payments    Payment[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+// ============================================================================
+// STATION MANAGEMENT
+// ============================================================================
+
+model Station {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  latitude    Float
+  longitude   Float
+  totalPorts  Int
+  amenities   String[] // ["wifi", "restaurant", "shopping"]
+  pricing     Json     // Dynamic pricing configuration
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Multi-tenant
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  chargingPorts ChargingPort[]
+  bookings    Booking[]
+  analytics   StationAnalytics[]
+  maintenance MaintenanceRecord[]
+
+  @@index([latitude, longitude])
+  @@map("stations")
+}
+
+model ChargingPort {
+  id          String      @id @default(cuid())
+  portNumber  Int
+  connectorType ConnectorType
+  powerOutput Int         // kW
+  status      PortStatus
+  currentSession String?   // Current charging session ID
+  lastUsed    DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Station relationship
+  stationId   String
+  station     Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  bookings    Booking[]
+  sessions    ChargingSession[]
+  telemetry   PortTelemetry[]
+
+  @@unique([stationId, portNumber])
+  @@map("charging_ports")
+}
+
+model ChargingSession {
+  id          String   @id @default(cuid())
+  startTime   DateTime
+  endTime     DateTime?
+  energyUsed  Float?   // kWh
+  cost        Float?
+  status      SessionStatus
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  portId      String
+  port        ChargingPort @relation(fields: [portId], references: [id])
+
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+
+  vehicleId   String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id])
+
+  bookingId   String?  @unique
+  booking     Booking? @relation(fields: [bookingId], references: [id])
+
+  payment     Payment?
+
+  @@map("charging_sessions")
+}
+
+// ============================================================================
+// BOOKING & SCHEDULING
+// ============================================================================
+
+model Booking {
+  id          String      @id @default(cuid())
+  startTime   DateTime
+  endTime     DateTime
+  status      BookingStatus
+  totalCost   Float?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relationships
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+
+  stationId   String
+  station     Station     @relation(fields: [stationId], references: [id])
+
+  portId      String
+  port        ChargingPort @relation(fields: [portId], references: [id])
+
+  vehicleId   String
+  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id])
+
+  session     ChargingSession?
+  payment     Payment?
+
+  @@map("bookings")
+}
+
+model Vehicle {
+  id          String   @id @default(cuid())
+  make        String
+  model       String
+  year        Int
+  batteryCapacity Float // kWh
+  connectorTypes ConnectorType[]
+  licensePlate String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Owner
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  bookings    Booking[]
+  sessions    ChargingSession[]
+
+  @@map("vehicles")
+}
+
+// ============================================================================
+// PAYMENT & BILLING
+// ============================================================================
+
+model Payment {
+  id          String      @id @default(cuid())
+  amount      Float
+  currency    String      @default("USD")
+  status      PaymentStatus
+  method      PaymentMethod
+  stripePaymentId String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relationships
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+
+  sessionId   String?     @unique
+  session     ChargingSession? @relation(fields: [sessionId], references: [id])
+
+  bookingId   String?     @unique
+  booking     Booking?    @relation(fields: [bookingId], references: [id])
+
+  @@map("payments")
+}
+
+model Subscription {
+  id          String      @id @default(cuid())
+  plan        String      // "basic", "premium", "enterprise"
+  status      SubscriptionStatus
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean @default(false)
+  stripeSubscriptionId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Tenant relationship
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// ============================================================================
+// API & INTEGRATIONS
+// ============================================================================
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  permissions String[] // ["read:stations", "write:bookings"]
+  isActive    Boolean  @default(true)
+  lastUsed    DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Tenant relationship
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ============================================================================
+// ANALYTICS & TELEMETRY
+// ============================================================================
+
+model StationAnalytics {
+  id          String   @id @default(cuid())
+  date        DateTime
+  totalSessions Int
+  totalEnergy Float    // kWh
+  totalRevenue Float
+  avgSessionDuration Float // minutes
+  peakHour    Int      // 0-23
+  utilizationRate Float // 0-1
+  createdAt   DateTime @default(now())
+
+  // Station relationship
+  stationId   String
+  station     Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@unique([stationId, date])
+  @@map("station_analytics")
+}
+
+model PortTelemetry {
+  id          String   @id @default(cuid())
+  timestamp   DateTime
+  voltage     Float?
+  current     Float?
+  power       Float?
+  temperature Float?
+  status      Json?
+  createdAt   DateTime @default(now())
+
+  // Port relationship
+  portId      String
+  port        ChargingPort @relation(fields: [portId], references: [id], onDelete: Cascade)
+
+  @@index([portId, timestamp])
+  @@map("port_telemetry")
+}
+
+model MaintenanceRecord {
+  id          String      @id @default(cuid())
+  type        MaintenanceType
+  description String
+  status      MaintenanceStatus
+  scheduledAt DateTime
+  completedAt DateTime?
+  cost        Float?
+  technician  String?
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Station relationship
+  stationId   String
+  station     Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@map("maintenance_records")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum TenantType {
+  STATION_OPERATOR
+  MANUFACTURER
+  NETWORK_PROVIDER
+  ENTERPRISE
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  STATION_MANAGER
+  CUSTOMER
+  TECHNICIAN
+}
+
+enum ConnectorType {
+  TYPE1      // J1772
+  TYPE2      // Mennekes
+  CCS1       // CCS Type 1
+  CCS2       // CCS Type 2
+  CHAdeMO    // CHAdeMO
+  TESLA      // Tesla Supercharger
+  NACS       // North American Charging Standard
+}
+
+enum PortStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  OUT_OF_ORDER
+  MAINTENANCE
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  ERROR
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  DIGITAL_WALLET
+  ACCOUNT_BALANCE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  UNPAID
+}
+
+enum MaintenanceType {
+  ROUTINE
+  REPAIR
+  UPGRADE
+  INSPECTION
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}

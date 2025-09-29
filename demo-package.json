@@ -1,0 +1,14 @@
+{
+  "name": "ev-platform-demo",
+  "version": "1.0.0",
+  "description": "EV Power Station Management Demo",
+  "main": "demo-server.js",
+  "scripts": {
+    "start": "node demo-server.js",
+    "demo": "node demo-server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}

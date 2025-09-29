@@ -1,0 +1,45 @@
+{
+  "name": "ev-power-station-management",
+  "version": "1.0.0",
+  "description": "SaaS EV Power Station Management Platform",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api-gateway\" \"npm run dev:auth\" \"npm run dev:station\" \"npm run dev:booking\" \"npm run dev:payment\" \"npm run dev:analytics\"",
+    "dev:api-gateway": "cd services/api-gateway && npm run dev",
+    "dev:auth": "cd services/auth-service && npm run dev",
+    "dev:station": "cd services/station-service && npm run dev",
+    "dev:booking": "cd services/booking-service && npm run dev",
+    "dev:payment": "cd services/payment-service && npm run dev",
+    "dev:analytics": "cd services/analytics-service && npm run dev",
+    "dev:dashboard": "cd apps/admin-dashboard && npm run dev",
+    "dev:mobile": "cd apps/customer-app && npm run start",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "cd services/auth-service && npx prisma generate",
+    "db:migrate": "cd services/auth-service && npx prisma migrate dev",
+    "db:seed": "cd services/auth-service && npx prisma db seed",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "concurrently": "^8.2.0",
+    "turbo": "^1.11.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  }
+}
